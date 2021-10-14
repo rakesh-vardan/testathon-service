@@ -1,0 +1,15 @@
+{
+  "name": "testathon-service",
+  "version": "1.0.0",
+  "description": "Service for testathon-2021",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Rakesh Vardan",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.19.0",
+    "express": "^4.17.1"
+  }
+}
