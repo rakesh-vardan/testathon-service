@@ -1,16 +1,14 @@
-const express = require('express');
+import { ErrorObject } from 'ajv';
+import express from 'express';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const {
-    Validator,
-    ValidationError,
-} = require("express-json-validator-middleware");
+import { Validator, ValidationError, List } from "express-json-validator-middleware";
 
 const { validate } = new Validator();
 
-function validationErrorMiddleware(error, request, response, next) {
+function validationErrorMiddleware(error: { validationErrors: any; }, request: any, response: { headersSent: any; status: (arg0: number) => { (): any; new(): any; json: { (arg0: { errors: List<ErrorObject[]>; }): void; new(): any; }; }; }, next: (arg0: undefined) => void) {
     if (response.headersSent) {
         return next(error);
     }
@@ -107,5 +105,6 @@ app.post(
 app.use(validationErrorMiddleware);
 
 app.listen(PORT, () => {
+    // tslint:disable-next-line:no-console
     console.log(`Server started on port: ${PORT}`);
 })
