@@ -1,82 +1,78 @@
+var fs = require('fs');
+var multer = require('multer');
 const express = require('express');
+const Joi = require('joi');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-const {
-    Validator,
-    ValidationError,
-} = require("express-json-validator-middleware");
-
-const { validate } = new Validator();
-
-function validationErrorMiddleware(error, request, response, next) {
-    if (response.headersSent) {
-        return next(error);
-    }
-
-    const isValidationError = error instanceof ValidationError;
-    if (!isValidationError) {
-        return next(error);
-    }
-
-    response.status(400).json({
-        errors: error.validationErrors,
-    });
-
-    next();
-}
 
 app.use(express.json());
 app.use(express.urlencoded({
     extended: true
 }))
 
-
-const stockSchema = {
-    type: "object",
-    required: ["period", "stockData", "highestClosingPrice"],
-    properties: {
-        period: {
-            type: "object",
-            required: ["startDate", "endDate"],
-            properties: {
-                startDate: {
-                    type: "string",
-                    minLength: 1,
-                    format: "date"
-                },
-                endDate: {
-                    type: "string",
-                    minLength: 1,
-                    format: "date"
-                }
+function makeMulterUploadMiddleware(multerUploadFunction) {
+    return (req, res, next) =>
+        multerUploadFunction(req, res, err => {
+            // handle Multer error
+            if (err && err.name && err.name === 'MulterError') {
+                return res.status(500).send({
+                    error: err.name,
+                    message: `File upload error: ${err.message}`,
+                });
             }
-        },
-        stockData: {
-            type: "array",
-            items: {
-                type: "object",
-                properties: {
-                    date: {
-                        type: "string",
-                        minLength: 1,
-                        format: "date"
-                    },
-                    value: {
-                        type: "integer",
-                        minimum: 1
+
+            // handle other errors
+            if (err) {
+                return res.status(500).send({
+                    error: 'FILE UPLOAD ERROR',
+                    message: `Something wrong ocurred when trying to upload the file`,
+                });
+            }
+
+            if (req.file.mimetype !== 'application/json') {
+                return res.status(400).send({
+                    error: 'FILE UPLOAD ERROR',
+                    message: `Only upload JSON files`,
+                });
+            }
+
+            if (req.file.mimetype === 'application/json') {
+                const filepath = 'uploads/' + req.file.filename;
+                fs.readFile(filepath, 'utf8', function (err, data) {
+                    const schema = Joi.object().keys({
+                        highestClosingPrice: Joi.number().min(1).required(),
+                        period: Joi.object({
+                            startDate: Joi.string().required(),
+                            endDate: Joi.string().required()
+                        }).required(),
+                        stockData: Joi.array().items(
+                            Joi.object({
+                                date: Joi.string().required(),
+                                value: Joi.number().required()
+                            })
+                        ).required()
+                    });
+
+                    const result = schema.validate(JSON.parse(data));
+                    // console.log(result);
+
+                    if (result.error == null) {
+                        res.status(200).send({
+                            error: 'FILE UPLOAD SUCCESSFUL',
+                            message: `Validation Success, File Upload Completed`,
+                        });
+                    } else {
+                        return res.status(400).send(result.error);
                     }
-                },
-                required: ["date", "value"],
-            },
-        },
-        highestClosingPrice: {
-            type: "integer",
-            minimum: 1,
-        },
-    }
-};
+                });
+            }
+        });
+}
+
+const upload = multer({ dest: 'uploads/' });
+const multerUploadMiddleware = makeMulterUploadMiddleware(upload.single('file'));
+
 
 app.get("/", (req, res) => {
     res.send('Hello, your service is working!')
@@ -92,19 +88,9 @@ app.get("/api/videos/title", (req, res) => {
     });
 })
 
-app.post(
-    "/api/stocks/data",
-    validate({ body: stockSchema }),
-    function createUserRouteHandler(request, response, next) {
-        response.json({
-            result: "Passed"
-        });
-
-        next();
-    }
-);
-
-app.use(validationErrorMiddleware);
+app.post('/api/stocks/data', multerUploadMiddleware, (req, res) => {
+    res.send(req.body)
+});
 
 app.listen(PORT, () => {
     console.log(`Server started on port: ${PORT}`);
