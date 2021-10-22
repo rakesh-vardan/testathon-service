@@ -1,7 +1,13 @@
-var fs = require('fs');
-var multer = require('multer');
+const fs = require('fs');
+const multer = require('multer');
 const express = require('express');
-const Joi = require('joi');
+const Joi = require('joi')
+    .extend(require('@joi/date'));
+const fsExtra = require('fs-extra')
+const {
+    Validator,
+    ValidationError,
+} = require("express-json-validator-middleware");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,6 +16,70 @@ app.use(express.json());
 app.use(express.urlencoded({
     extended: true
 }))
+
+const { validate } = new Validator();
+
+function validationErrorMiddleware(error, request, response, next) {
+    if (response.headersSent) {
+        return next(error);
+    }
+
+    const isValidationError = error instanceof ValidationError;
+    if (!isValidationError) {
+        return next(error);
+    }
+
+    response.status(400).json({
+        errors: error.validationErrors,
+    });
+
+    next();
+}
+
+const stockSchema = {
+    type: "object",
+    required: ["period", "stockData", "highestClosingPrice"],
+    properties: {
+        period: {
+            type: "object",
+            required: ["startDate", "endDate"],
+            properties: {
+                startDate: {
+                    type: "string",
+                    minLength: 1,
+                    format: "date"
+                },
+                endDate: {
+                    type: "string",
+                    minLength: 1,
+                    format: "date"
+                }
+            }
+        },
+        stockData: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: {
+                    date: {
+                        type: "string",
+                        minLength: 1,
+                        format: "date"
+                    },
+                    value: {
+                        type: "integer",
+                        minimum: 1
+                    }
+                },
+                required: ["date", "value"],
+            },
+        },
+        highestClosingPrice: {
+            type: "integer",
+            minimum: 1,
+        },
+    }
+};
 
 function makeMulterUploadMiddleware(multerUploadFunction) {
     return (req, res, next) =>
@@ -43,19 +113,18 @@ function makeMulterUploadMiddleware(multerUploadFunction) {
                     const schema = Joi.object().keys({
                         highestClosingPrice: Joi.number().min(1).required(),
                         period: Joi.object({
-                            startDate: Joi.string().required(),
-                            endDate: Joi.string().required()
+                            startDate: Joi.date().format('YYYY-MM-DD').required(),
+                            endDate: Joi.date().format('YYYY-MM-DD').required()
                         }).required(),
                         stockData: Joi.array().items(
                             Joi.object({
-                                date: Joi.string().required(),
+                                date: Joi.date().format('YYYY-MM-DD').required(),
                                 value: Joi.number().required()
                             })
                         ).required()
                     });
 
                     const result = schema.validate(JSON.parse(data));
-                    // console.log(result);
 
                     if (result.error == null) {
                         res.status(200).send({
@@ -88,9 +157,28 @@ app.get("/api/videos/title", (req, res) => {
     });
 })
 
-app.post('/api/stocks/data', multerUploadMiddleware, (req, res) => {
-    res.send(req.body)
+app.post("/api/v1/stocks/data", validate({ body: stockSchema }),
+    function createUserRouteHandler(request, response, next) {
+        response.json({
+            result: "Passed"
+        });
+
+        next();
+    }
+);
+
+app.post('/api/v2/stocks/data', multerUploadMiddleware, (req, res) => {
+    res.send(req.body);
 });
+
+app.delete('/api/files', (req, res) => {
+    fsExtra.emptyDir('uploads/', err => {
+        if (err) return console.error(err)
+        res.json({ message: 'Deleted' })
+    })
+})
+
+app.use(validationErrorMiddleware);
 
 app.listen(PORT, () => {
     console.log(`Server started on port: ${PORT}`);
